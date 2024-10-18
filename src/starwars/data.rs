@@ -140,8 +140,11 @@ pub struct APIPlanet {
 }
 
 pub struct StarWarsAPI {
-    // these indices are used for default constructed heros
-    id_counter: usize,
+    // id counters for insertion
+    char_id_counter: usize,
+    starship_id_counter: usize,
+    planet_id_counter: usize,
+
     luke_idx: usize,
     r2d2_idx: usize,
     characters: Slab<APICharacter>,
@@ -153,27 +156,27 @@ impl StarWarsAPI {
     pub fn new() -> Self {
         let mut starships = Slab::with_capacity(7);
         let xwing = starships.insert(APIStarShip {
-            id: "3000".into(),
+            id: "1".into(),
             name: "X-Wing".into(),
             length: 12.49,
         });
         let tantive = starships.insert(APIStarShip {
-            id: "3001".into(),
+            id: "2".into(),
             name: "Tantive IV".into(),
             length: 126.,
         });
         let tie = starships.insert(APIStarShip {
-            id: "3002".into(),
+            id: "3".into(),
             name: "Tie Figter".into(),
             length: 9.2,
         });
         let death_star = starships.insert(APIStarShip {
-            id: "3003".into(),
+            id: "4".into(),
             name: "Death Star".into(),
             length: 12.49,
         });
         let falcon = starships.insert(APIStarShip {
-            id: "3003".into(),
+            id: "5".into(),
             name: "Millenium Falcon".into(),
             length: 34.75,
         });
@@ -181,49 +184,49 @@ impl StarWarsAPI {
         let mut characters = Slab::with_capacity(7);
 
         let luke = characters.insert(
-            APICharacter::build("1000", "Luke Skywalker")
+            APICharacter::build("1", "Luke Skywalker")
                 .is_human()
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .star_ship(xwing)
                 .mass(77),
         );
         let vader = characters.insert(
-            APICharacter::build("1001", "Darth Vader")
+            APICharacter::build("2", "Darth Vader")
                 .is_human()
                 .star_ship(tie)
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(120),
         );
         let han = characters.insert(
-            APICharacter::build("1002", "Han Solo")
+            APICharacter::build("2", "Han Solo")
                 .is_human()
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .star_ship(falcon)
                 .mass(85),
         );
         let leia = characters.insert(
-            APICharacter::build("1003", "Leia Organa")
+            APICharacter::build("3", "Leia Organa")
                 .is_human()
                 .star_ship(tantive)
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(60),
         );
         let tarkin = characters.insert(
-            APICharacter::build("1004", "Wilhuff Tarkin")
+            APICharacter::build("4", "Wilhuff Tarkin")
                 .is_human()
                 .star_ship(death_star)
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(90),
         );
         let r2 = characters.insert(
-            APICharacter::build("2000", "R2-D2")
+            APICharacter::build("5", "R2-D2")
                 .is_droid()
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(32)
                 .primary_function("Astromech".into()),
         );
         let treepio = characters.insert(
-            APICharacter::build("2001", "C-3PO")
+            APICharacter::build("6", "C-3PO")
                 .is_droid()
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(75)
@@ -242,7 +245,7 @@ impl StarWarsAPI {
         let mut planets = Slab::with_capacity(7);
 
         let tatooine = planets.insert(APIPlanet {
-            id: "4000".into(),
+            id: "1".into(),
             climate: "arid".into(),
             diameter: 10_465,
             gravity: "Standard".into(),
@@ -253,7 +256,7 @@ impl StarWarsAPI {
         });
 
         let alderaan = planets.insert(APIPlanet {
-            id: "4001".into(),
+            id: "2".into(),
             climate: "arid".into(),
             diameter: 10_465,
             gravity: "Temperate".into(),
@@ -268,7 +271,9 @@ impl StarWarsAPI {
         characters[leia].home_planet = Some(alderaan);
 
         StarWarsAPI {
-            id_counter: 5000, // every new insert will get id in this range or above
+            char_id_counter: 7,
+            starship_id_counter: 6,
+            planet_id_counter: 3,
             luke_idx: luke,
             r2d2_idx: r2,
             characters,
