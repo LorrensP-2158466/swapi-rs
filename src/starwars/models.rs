@@ -1,8 +1,13 @@
-use async_graphql::{Context, DataContext, Enum, Interface, Object};
+use async_graphql::{
+    dataloader::DataLoader, Context, DataContext, Enum, Interface, Object, Result,
+};
 use serde::{Deserialize, Serialize};
+use sqlx::Executor;
 
 use crate::starwars::data::{APICharacter, APIPlanet, APIStarShip, StarWarsAPI};
+use futures::{future::Either, stream, FutureExt, StreamExt};
 
+use super::credits_loader::CreditsDataLoader;
 /// One of the films in the Star Wars Trilogy
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Episode {
@@ -16,89 +21,162 @@ pub enum Episode {
     Jedi,
 }
 
-pub struct Human<'a>(&'a APICharacter);
+pub struct Human {
+    /// id of this character
+    pub id: String,
+
+    /// name of this character
+    pub name: String,
+
+    /// integer id's of character friends
+    /// maps in StarWars.characters
+    pub friends: Vec<usize>,
+
+    /// all the episodes this character appeared in
+    pub appears_in: Vec<Episode>,
+
+    /// Optional Home planet of  a Human
+    pub home_planet: Option<usize>,
+
+    /// the starship of a Human
+    pub star_ship: Option<usize>,
+
+    /// mass of character (i.e. weight) in kg
+    pub mass: usize,
+}
+
+impl From<APICharacter> for Human {
+    fn from(value: APICharacter) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            friends: value.friends,
+            appears_in: value.appears_in,
+            home_planet: value.home_planet,
+            star_ship: value.star_ship,
+            mass: value.mass,
+        }
+    }
+}
 
 #[Object]
-impl<'a> Human<'a> {
-    pub async fn id(&self) -> String {
-        self.0.id.clone()
+impl Human {
+    pub async fn id(&self) -> &str {
+        &self.id
     }
-    pub async fn name(&self) -> String {
-        self.0.name.clone()
+    pub async fn name(&self) -> &str {
+        &self.name
     }
-    pub async fn friends<'ctx>(&self, ctx: &Context<'ctx>) -> Vec<Character<'ctx>> {
+    pub async fn friends<'ctx>(&self, ctx: &Context<'ctx>) -> Vec<Character> {
         let api = ctx.data_unchecked::<StarWarsAPI>();
-        self.0
-            .friends
-            .iter()
-            .filter_map(|&i| api.get_character(i))
+        stream::iter(self.friends.iter())
+            .filter_map(|&i| async move { api.get_character(i).await })
             .map(Into::into)
             .collect()
+            .await
     }
 
     pub async fn appears_in(&self) -> Vec<Episode> {
-        self.0.appears_in.clone()
+        self.appears_in.clone()
     }
 
     pub async fn mass(&self) -> usize {
-        self.0.mass
+        self.mass
     }
 
-    pub async fn home_planet<'ctx>(&self, ctx: &Context<'ctx>) -> Option<Planet<'ctx>> {
+    pub async fn home_planet<'ctx>(&self, ctx: &Context<'ctx>) -> Option<Planet> {
         let api = ctx.data_unchecked::<StarWarsAPI>();
-        self.0
-            .home_planet
-            .map(|id| api.get_planet_by_idx(id))
-            .and_then(|p| p.map(Planet))
+        let home_planet = self.home_planet?;
+        api.get_planet_by_idx(home_planet).await.map(Into::into)
     }
 
-    pub async fn starship<'ctx>(&self, ctx: &Context<'ctx>) -> Option<StarShip<'ctx>> {
+    pub async fn starship<'ctx>(&self, ctx: &Context<'ctx>) -> Option<StarShip> {
         let api = ctx.data_unchecked::<StarWarsAPI>();
-        self.0
-            .star_ship
-            .map(|id| api.get_starship_by_idx(id))
-            .and_then(|p| p.map(StarShip))
+        let star_ship = self.star_ship?;
+        api.get_starship_by_idx(star_ship).await.map(Into::into)
+    }
+
+    pub async fn credits<'ctx>(&self, ctx: &Context<'ctx>) -> Result<Option<i64>> {
+        // we know it exists
+        let loader = ctx.data_unchecked::<DataLoader<CreditsDataLoader>>();
+        loader.load_one(self.id.clone()).await
     }
 }
-pub struct Droid<'a>(&'a APICharacter);
+pub struct Droid {
+    /// id of this character
+    pub id: String,
+
+    /// name of this character
+    pub name: String,
+
+    /// integer id's of character friends
+    /// maps in StarWars.characters
+    pub friends: Vec<usize>,
+
+    /// all the episodes this character appeared in
+    pub appears_in: Vec<Episode>,
+
+    /// primary function of droid
+    pub primary_function: Option<String>,
+
+    /// mass of character (i.e. weight) in kg
+    pub mass: usize,
+}
+
+impl From<APICharacter> for Droid {
+    fn from(value: APICharacter) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            friends: value.friends,
+            appears_in: value.appears_in,
+            mass: value.mass,
+            primary_function: value.primary_function,
+        }
+    }
+}
 
 #[Object]
-impl<'a> Droid<'a> {
-    pub async fn id(&self) -> String {
-        self.0.id.clone()
+impl Droid {
+    pub async fn id(&self) -> &str {
+        &self.id
     }
-    pub async fn name(&self) -> String {
-        self.0.name.clone()
+    pub async fn name(&self) -> &str {
+        &self.name
     }
-    pub async fn friends<'ctx>(&self, ctx: &Context<'ctx>) -> Vec<Character<'ctx>> {
+    pub async fn friends<'ctx>(&self, ctx: &Context<'ctx>) -> Vec<Character> {
         // we weten dat StarWarsAPI bestaat duhhhh
         // in het echt moeten we dit doen:
         // let api = ctx.data::<StarWarsAPI>()?; // return error
         let api = ctx.data_unchecked::<StarWarsAPI>();
-        self.0
-            .friends
-            .iter()
+        stream::iter(self.friends.iter())
             .filter_map(|&i| api.get_character(i))
             .map(Into::into)
             .collect()
+            .await
     }
 
     pub async fn appears_in<'ctx>(&self) -> Vec<Episode> {
-        self.0.appears_in.clone()
+        self.appears_in.clone()
     }
 
     /// The primary function of the droid.
-    async fn primary_function(&self) -> Option<String> {
-        self.0.primary_function.clone()
+    async fn primary_function(&self) -> Option<&str> {
+        self.primary_function.as_deref()
     }
 }
 
 /// A Star Wars starship
 /// think of Milenium Falcon or X-Wing, ...
-pub struct StarShip<'a>(&'a APIStarShip);
+pub struct StarShip(pub APIStarShip);
 
+impl From<APIStarShip> for StarShip {
+    fn from(value: APIStarShip) -> Self {
+        Self(value)
+    }
+}
 #[Object]
-impl<'a> StarShip<'a> {
+impl StarShip {
     /// the Id of the Starship
     async fn id(&self) -> String {
         self.0.id.clone()
@@ -114,10 +192,17 @@ impl<'a> StarShip<'a> {
     }
 }
 
-pub struct Planet<'a>(&'a APIPlanet);
+/// a Star Wars planet, think of Alderaan or Coruscant
+pub struct Planet(APIPlanet);
+
+impl From<APIPlanet> for Planet {
+    fn from(value: APIPlanet) -> Self {
+        Self(value)
+    }
+}
 
 #[Object]
-impl<'a> Planet<'a> {
+impl Planet {
     async fn id(&self) -> String {
         self.0.id.clone()
     }
@@ -130,68 +215,22 @@ impl<'a> Planet<'a> {
 #[derive(Interface)]
 #[allow(clippy::duplicated_attributes)]
 #[graphql(
-    field(name = "id", ty = "String"),
-    field(name = "name", ty = "String"),
-    field(name = "friends", ty = "Vec<Character<'ctx>>"),
+    field(name = "id", ty = "&str"),
+    field(name = "name", ty = "&str"),
+    field(name = "friends", ty = "Vec<Character>"),
     field(name = "appears_in", ty = "Vec<Episode>")
 )]
-enum Character<'a> {
-    Human(Human<'a>),
-    Droid(Droid<'a>),
+pub enum Character {
+    Human(Human),
+    Droid(Droid),
 }
 
-impl<'a> From<&'a APICharacter> for Character<'a> {
-    fn from(value: &'a APICharacter) -> Self {
+impl From<APICharacter> for Character {
+    fn from(value: APICharacter) -> Self {
         if value.is_human {
-            Human(value).into()
+            Self::Human(value.into())
         } else {
-            Droid(value).into()
+            Self::Droid(value.into())
         }
-    }
-}
-
-/// The query object for starwars
-pub struct QueryRoot;
-
-#[Object]
-impl QueryRoot {
-    // returns hero based on episode, else it just returns the hero of the entire star wars sage, aka luke SKYWALKER
-    async fn hero<'ctx>(&self, ctx: &Context<'ctx>, episode: Option<Episode>) -> Character<'ctx> {
-        let api = ctx.data_unchecked::<StarWarsAPI>();
-        episode.map_or_else(
-            || Human(api.get_saga_hero()).into(),
-            |ep| api.get_hero(ep).into(),
-        )
-    }
-
-    async fn human<'ctx>(&self, ctx: &Context<'ctx>, id: String) -> Option<Human<'ctx>> {
-        let api = ctx.data_unchecked::<StarWarsAPI>();
-        api.get_human(id).map(Human)
-    }
-
-    async fn droid<'ctx>(&self, ctx: &Context<'ctx>, id: String) -> Option<Droid<'ctx>> {
-        let api = ctx.data_unchecked::<StarWarsAPI>();
-        api.get_droid(id).map(Droid)
-    }
-
-    async fn starship<'ctx>(&self, ctx: &Context<'ctx>, id: String) -> Option<StarShip<'ctx>> {
-        let api = ctx.data_unchecked::<StarWarsAPI>();
-        api.get_starship(id).map(StarShip)
-    }
-
-    async fn humans<'ctx>(&self, ctx: &Context<'ctx>) -> Vec<Human<'ctx>> {
-        ctx.data_unchecked::<StarWarsAPI>()
-            .get_humans()
-            .iter()
-            .map(|&h| Human(h))
-            .collect()
-    }
-
-    async fn droids<'ctx>(&self, ctx: &Context<'ctx>) -> Vec<Droid<'ctx>> {
-        ctx.data_unchecked::<StarWarsAPI>()
-            .get_humans()
-            .iter()
-            .map(|&h| Droid(h))
-            .collect()
     }
 }

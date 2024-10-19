@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  swapi-rs:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: "postgres://postgres:password@db:5432/my_database"
+    volumes:
+      - .:/usr/src/app
+    networks:
+      - rustnet
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: my_database
+    ports:
+      - "5432:5432"
+    networks:
+      - rustnet
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+networks:
+  rustnet:
+    driver: bridge
+
+volumes:
+  db-data:

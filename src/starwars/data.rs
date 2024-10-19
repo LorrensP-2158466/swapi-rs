@@ -1,5 +1,7 @@
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
 use crate::starwars::models::Episode;
-use crate::starwars::models::QueryRoot;
 use async_graphql::*;
 use slab::Slab;
 
@@ -104,6 +106,7 @@ impl APICharacter {
     }
 }
 
+#[derive(Clone)]
 pub struct APIStarShip {
     /// id of StarShop
     pub id: String,
@@ -115,6 +118,7 @@ pub struct APIStarShip {
     pub length: f64,
 }
 
+#[derive(Clone)]
 pub struct APIPlanet {
     /// id of planet
     pub id: String,
@@ -147,9 +151,17 @@ pub struct StarWarsAPI {
 
     luke_idx: usize,
     r2d2_idx: usize,
-    characters: Slab<APICharacter>,
-    starships: Slab<APIStarShip>,
-    planets: Slab<APIPlanet>,
+
+    // seperate locks for more performance haha
+    characters: Arc<Mutex<Slab<APICharacter>>>,
+    starships: Arc<Mutex<Slab<APIStarShip>>>,
+    planets: Arc<Mutex<Slab<APIPlanet>>>,
+}
+
+impl Default for StarWarsAPI {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StarWarsAPI {
@@ -198,35 +210,35 @@ impl StarWarsAPI {
                 .mass(120),
         );
         let han = characters.insert(
-            APICharacter::build("2", "Han Solo")
+            APICharacter::build("3", "Han Solo")
                 .is_human()
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .star_ship(falcon)
                 .mass(85),
         );
         let leia = characters.insert(
-            APICharacter::build("3", "Leia Organa")
+            APICharacter::build("4", "Leia Organa")
                 .is_human()
                 .star_ship(tantive)
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(60),
         );
         let tarkin = characters.insert(
-            APICharacter::build("4", "Wilhuff Tarkin")
+            APICharacter::build("5", "Wilhuff Tarkin")
                 .is_human()
                 .star_ship(death_star)
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(90),
         );
         let r2 = characters.insert(
-            APICharacter::build("5", "R2-D2")
+            APICharacter::build("6", "R2-D2")
                 .is_droid()
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(32)
                 .primary_function("Astromech".into()),
         );
         let treepio = characters.insert(
-            APICharacter::build("6", "C-3PO")
+            APICharacter::build("7", "C-3PO")
                 .is_droid()
                 .appeared_in(vec![Episode::Empire, Episode::NewHope, Episode::Jedi])
                 .mass(75)
@@ -276,75 +288,90 @@ impl StarWarsAPI {
             planet_id_counter: 3,
             luke_idx: luke,
             r2d2_idx: r2,
-            characters,
-            starships,
-            planets,
+            characters: Arc::new(Mutex::new(characters)),
+            starships: Arc::new(Mutex::new(starships)),
+            planets: Arc::new(Mutex::new(planets)),
         }
     }
 
-    pub fn get_saga_hero(&self) -> &APICharacter {
-        &self.characters[self.luke_idx]
+    pub async fn get_saga_hero(&self) -> APICharacter {
+        self.characters.lock().await[self.luke_idx].clone()
     }
 
-    pub fn get_r2d2(&self) -> &APICharacter {
-        &self.characters[self.r2d2_idx]
+    pub async fn get_r2d2(&self) -> APICharacter {
+        self.characters.lock().await[self.r2d2_idx].clone()
     }
 
-    pub fn get_hero(&self, episode: Episode) -> &APICharacter {
+    pub async fn get_hero(&self, episode: Episode) -> APICharacter {
         if episode == Episode::Empire {
-            self.get_saga_hero()
+            self.get_saga_hero().await
         } else {
-            self.get_r2d2()
+            self.get_r2d2().await
         }
     }
 
-    pub fn get_human(&self, id: String) -> Option<&APICharacter> {
+    pub async fn get_human(&self, id: String) -> Option<APICharacter> {
         self.characters
+            .lock()
+            .await
             .iter()
             .find(|(_, c)| c.id == id)
             .map(|(_, c)| c)
             .filter(|c| c.is_human)
+            .cloned()
     }
 
-    pub fn get_humans(&self) -> Vec<&APICharacter> {
+    pub async fn get_humans(&self) -> Vec<APICharacter> {
         self.characters
+            .lock()
+            .await
             .iter()
             .filter(|(_, c)| c.is_human)
             .map(|(_, c)| c)
+            .cloned()
             .collect()
     }
 
-    pub fn get_droid(&self, id: String) -> Option<&APICharacter> {
+    pub async fn get_droid(&self, id: String) -> Option<APICharacter> {
         self.characters
+            .lock()
+            .await
             .iter()
             .find(|(_, c)| c.id == id)
             .map(|(_, c)| c)
             .filter(|c| !c.is_human)
+            .cloned()
     }
 
-    pub fn get_droids(&self) -> Vec<&APICharacter> {
+    pub async fn get_droids(&self) -> Vec<APICharacter> {
         self.characters
+            .lock()
+            .await
             .iter()
             .filter(|(_, c)| !c.is_human)
             .map(|(_, c)| c)
+            .cloned()
             .collect()
     }
 
-    pub fn get_character(&self, idx: usize) -> Option<&APICharacter> {
-        self.characters.get(idx)
+    pub async fn get_character(&self, idx: usize) -> Option<APICharacter> {
+        self.characters.lock().await.get(idx).cloned()
     }
 
-    pub fn get_starship(&self, id: String) -> Option<&APIStarShip> {
+    pub async fn get_starship(&self, id: String) -> Option<APIStarShip> {
         self.starships
+            .lock()
+            .await
             .iter()
             .find(|(_, c)| c.id == id)
             .map(|(_, c)| c)
+            .cloned()
     }
-    pub fn get_starship_by_idx(&self, s_idx: usize) -> Option<&APIStarShip> {
-        self.starships.get(s_idx)
+    pub async fn get_starship_by_idx(&self, s_idx: usize) -> Option<APIStarShip> {
+        self.starships.lock().await.get(s_idx).cloned()
     }
 
-    pub fn get_planet_by_idx(&self, c_idx: usize) -> Option<&APIPlanet> {
-        self.planets.get(c_idx)
+    pub async fn get_planet_by_idx(&self, c_idx: usize) -> Option<APIPlanet> {
+        self.planets.lock().await.get(c_idx).cloned()
     }
 }
